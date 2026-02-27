@@ -1,0 +1,13 @@
+torch==2.10.0
+torch-geometric==2.7.0
+numpy
+pandas
+scikit-learn
+scipy
+tqdm
+matplotlib
+seaborn
+jupyter
+fastapi
+uvicorn[standard]
+pydantic

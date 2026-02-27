@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AegisNode — Attack Simulator</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <style>
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+        padding: 16px 20px;
+      }
+      .scenario-btn {
+        background: linear-gradient(
+          135deg,
+          rgba(30, 30, 40, 0.95),
+          rgba(20, 20, 30, 0.98)
+        );
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 16px;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        text-align: left;
+        color: #e2e8f0;
+        position: relative;
+        overflow: hidden;
+      }
+      .scenario-btn:hover {
+        border-color: rgba(239, 68, 68, 0.5);
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+        transform: translateY(-2px);
+      }
+      .scenario-btn:active {
+        transform: translateY(0);
+      }
+      .scenario-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+      }
+      .scenario-btn .sc-icon {
+        font-size: 1.6rem;
+        margin-bottom: 6px;
+        display: block;
+      }
+      .scenario-btn .sc-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #f1f5f9;
+        margin-bottom: 4px;
+      }
+      .scenario-btn .sc-desc {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        line-height: 1.4;
+      }
+      .scenario-btn .sc-tag {
+        display: inline-block;
+        font-size: 0.65rem;
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border-radius: 4px;
+        padding: 2px 6px;
+        margin-top: 8px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+      }
+      .scenario-btn.vel .sc-tag {
+        background: rgba(251, 146, 60, 0.15);
+        color: #fb923c;
+      }
+      .scenario-btn.ct .sc-tag {
+        background: rgba(168, 85, 247, 0.15);
+        color: #a855f7;
+      }
+      .scenario-btn.cr .sc-tag {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+      }
+      .scenario-btn.geo .sc-tag {
+        background: rgba(56, 189, 248, 0.15);
+        color: #38bdf8;
+      }
+      .scenario-btn.amt .sc-tag {
+        background: rgba(234, 179, 8, 0.15);
+        color: #eab308;
+      }
+
+      .scenario-btn.vel:hover {
+        border-color: rgba(251, 146, 60, 0.5);
+        box-shadow: 0 0 20px rgba(251, 146, 60, 0.12);
+      }
+      .scenario-btn.ct:hover {
+        border-color: rgba(168, 85, 247, 0.5);
+        box-shadow: 0 0 20px rgba(168, 85, 247, 0.12);
+      }
+      .scenario-btn.cr:hover {
+        border-color: rgba(239, 68, 68, 0.5);
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.12);
+      }
+      .scenario-btn.geo:hover {
+        border-color: rgba(56, 189, 248, 0.5);
+        box-shadow: 0 0 20px rgba(56, 189, 248, 0.12);
+      }
+      .scenario-btn.amt:hover {
+        border-color: rgba(234, 179, 8, 0.5);
+        box-shadow: 0 0 20px rgba(234, 179, 8, 0.12);
+      }
+
+      .section-label {
+        padding: 8px 20px 0;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: #64748b;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body class="attacker-body">
+    <header class="header header-dark">
+      <div class="header-left">
+        <div class="logo-skull">
+          <svg
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#ef4444"
+            stroke-width="2"
+          >
+            <path
+              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"
+            />
+            <path d="M8 14s1.5 2 4 2 4-2 4-2" stroke-linecap="round" />
+            <circle cx="9" cy="10" r="1.5" fill="#ef4444" />
+            <circle cx="15" cy="10" r="1.5" fill="#ef4444" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="header-title header-title-red">
+            AegisNode <span class="header-sub">Attack Simulator</span>
+          </h1>
+        </div>
+      </div>
+      <div class="header-right">
+        <a href="/static/dashboard.html" class="nav-link"
+          >Open Dashboard &rarr;</a
+        >
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- ─── Attack Scenarios ─── -->
+    <div class="section-label">Select Attack Scenario</div>
+    <div class="scenario-grid">
+      <button
+        class="scenario-btn vel"
+        onclick="launchScenario('velocity_attack')"
+        id="btn-vel"
+      >
+        <span class="sc-icon">⚡</span>
+        <div class="sc-title">Velocity Attack</div>
+        <div class="sc-desc">
+          Stolen card used at 10+ merchants in under 3 minutes. Rapid-fire
+          purchases across Bali, Jakarta, and Surabaya.
+        </div>
+        <span class="sc-tag">8–12 rapid txns</span>
+      </button>
+
+      <button
+        class="scenario-btn ct"
+        onclick="launchScenario('card_testing')"
+        id="btn-ct"
+      >
+        <span class="sc-icon">🔍</span>
+        <div class="sc-title">Card Testing</div>
+        <div class="sc-desc">
+          Bot probes with tiny amounts (Rp 10K–35K) to verify stolen card, then
+          makes a massive Rp 5M+ purchase.
+        </div>
+        <span class="sc-tag">4–7 probes + big buy</span>
+      </button>
+
+      <button
+        class="scenario-btn cr"
+        onclick="launchScenario('collusion_ring')"
+        id="btn-cr"
+      >
+        <span class="sc-icon">🕸️</span>
+        <div class="sc-title">Collusion Ring</div>
+        <div class="sc-desc">
+          3–5 coordinated fake accounts all sending high-value payments to the
+          same electronics store within an hour.
+        </div>
+        <span class="sc-tag">3–5 ring members</span>
+      </button>
+
+      <button
+        class="scenario-btn geo"
+        onclick="launchScenario('geo_anomaly')"
+        id="btn-geo"
+      >
+        <span class="sc-icon">🌍</span>
+        <div class="sc-title">Geo Anomaly</div>
+        <div class="sc-desc">
+          Same tourist card used in Jakarta and Bali 10 minutes apart —
+          physically impossible travel distance.
+        </div>
+        <span class="sc-tag">impossible travel</span>
+      </button>
+
+      <button
+        class="scenario-btn amt"
+        onclick="launchScenario('amount_anomaly')"
+        id="btn-amt"
+      >
+        <span class="sc-icon">💰</span>
+        <div class="sc-title">Amount Anomaly</div>
+        <div class="sc-desc">
+          Rp 5M+ transaction at 3 AM on a surf shop that normally processes Rp
+          200K average. Off-hours high-value fraud.
+        </div>
+        <span class="sc-tag">off-hours spike</span>
+      </button>
+    </div>
+
+    <!-- ─── Stats Summary ─── -->
+    <div class="attack-summary" id="attackSummary" style="display: none">
+      <div class="summ-item">
+        <span class="summ-label">Processed</span
+        ><span class="summ-val" id="summTotal">0</span>
+      </div>
+      <div class="summ-item summ-ok">
+        <span class="summ-label">OK</span
+        ><span class="summ-val" id="summOK">0</span>
+      </div>
+      <div class="summ-item summ-flag">
+        <span class="summ-label">Flagged</span
+        ><span class="summ-val" id="summFlagged">0</span>
+      </div>
+      <div class="summ-item">
+        <span class="summ-label">Missed</span
+        ><span class="summ-val" id="summMissed">0</span>
+      </div>
+    </div>
+
+    <!-- ─── Terminal Log ─── -->
+    <div class="terminal" id="terminal">
+      <div class="term-line term-info">
+        [AegisNode] Attack Simulator ready. Select a scenario above to begin.
+      </div>
+    </div>
+
+    <script>
+      let ws;
+      let processed = 0,
+        ok = 0,
+        flagged = 0,
+        missed = 0;
+      let running = false;
+
+      function setAllButtons(disabled) {
+        document
+          .querySelectorAll(".scenario-btn")
+          .forEach((b) => (b.disabled = disabled));
+      }
+
+      function connect() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws/attack`);
+        ws.onopen = () => {
+          document.getElementById("statusDot").className = "status-dot online";
+          document.getElementById("statusText").textContent = "Connected";
+          setAllButtons(false);
+        };
+        ws.onclose = () => {
+          document.getElementById("statusDot").className = "status-dot offline";
+          document.getElementById("statusText").textContent = "Disconnected";
+          running = false;
+          setAllButtons(true);
+          setTimeout(connect, 2000);
+        };
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          handleMsg(msg);
+        };
+      }
+
+      function handleMsg(msg) {
+        const term = document.getElementById("terminal");
+        switch (msg.type) {
+          case "log": {
+            const div = document.createElement("div");
+            div.className = `term-line term-${msg.level || "info"}`;
+            div.textContent = msg.text;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+            break;
+          }
+          case "txn_log": {
+            const div = document.createElement("div");
+            div.className = `term-line term-txn ${msg.color === "red" ? "term-fraud" : "term-ok"}`;
+            div.textContent = msg.text;
+            term.appendChild(div);
+            while (term.children.length > 500)
+              term.removeChild(term.firstChild);
+            term.scrollTop = term.scrollHeight;
+            break;
+          }
+          case "transaction": {
+            processed++;
+            if (msg.data.is_flagged) flagged++;
+            else if (msg.data.is_fraud && !msg.data.is_flagged) missed++;
+            else ok++;
+
+            document.getElementById("summTotal").textContent = processed;
+            document.getElementById("summOK").textContent = ok;
+            document.getElementById("summFlagged").textContent = flagged;
+            document.getElementById("summMissed").textContent = missed;
+            break;
+          }
+          case "stats_update": {
+            // Final stats from the simulation — update missed from actual false negatives
+            if (msg.data && msg.data.missed != null) {
+              missed = msg.data.missed;
+              document.getElementById("summMissed").textContent = missed;
+            }
+            break;
+          }
+          case "error": {
+            const div = document.createElement("div");
+            div.className = "term-line term-error";
+            div.textContent = msg.text;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
+            running = false;
+            setAllButtons(false);
+            break;
+          }
+        }
+
+        // Re-enable buttons when simulation is done
+        if (
+          msg.type === "log" &&
+          msg.text &&
+          msg.text.includes("Attack simulation complete")
+        ) {
+          running = false;
+          setAllButtons(false);
+        }
+      }
+
+      function launchScenario(attackType) {
+        if (!ws || ws.readyState !== WebSocket.OPEN || running) return;
+        running = true;
+
+        // Reset counters
+        processed = 0;
+        ok = 0;
+        flagged = 0;
+        missed = 0;
+        document.getElementById("attackSummary").style.display = "flex";
+        document.getElementById("summTotal").textContent = "0";
+        document.getElementById("summOK").textContent = "0";
+        document.getElementById("summFlagged").textContent = "0";
+        document.getElementById("summMissed").textContent = "0";
+        setAllButtons(true);
+
+        const label = attackType.replace(/_/g, " ").toUpperCase();
+
+        ws.send(
+          JSON.stringify({
+            total: 500,
+            fraud_pct: 0.05,
+            speed: "normal",
+            attack_type: attackType,
+          }),
+        );
+
+        const term = document.getElementById("terminal");
+        const div = document.createElement("div");
+        div.className = "term-line term-info";
+        div.textContent = `[Attacker] Launching scenario: ${label}`;
+        term.appendChild(div);
+        term.scrollTop = term.scrollHeight;
+      }
+
+      connect();
+    </script>
+  </body>
+</html>

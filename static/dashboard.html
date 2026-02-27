@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AegisNode — Paylabs Security Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body class="dashboard-body">
+
+<!-- ─── HEADER ─── -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14" stroke="url(#grad)" stroke-width="2.5" fill="none"/>
+        <path d="M16 6 L22 14 H10 Z" fill="url(#grad)" opacity="0.8"/>
+        <circle cx="16" cy="20" r="4" fill="url(#grad)"/>
+        <defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00f0ff"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient></defs>
+      </svg>
+    </div>
+    <div>
+      <h1 class="header-title">AegisNode <span class="header-sub">Paylabs Merchant Security Dashboard</span></h1>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="status-dot" id="statusDot"></span>
+    <span class="status-text" id="statusText">Connecting...</span>
+  </div>
+</header>
+
+<!-- ─── STATS BAR ─── -->
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card">
+    <div class="stat-label">Total Processed</div>
+    <div class="stat-value" id="statTotal">0</div>
+  </div>
+  <div class="stat-card stat-approved">
+    <div class="stat-label">Approved</div>
+    <div class="stat-value" id="statApproved">0</div>
+  </div>
+  <div class="stat-card stat-flagged">
+    <div class="stat-label">Flagged</div>
+    <div class="stat-value" id="statFlagged">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Recall</div>
+    <div class="stat-value" id="statRecall">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Precision</div>
+    <div class="stat-value" id="statPrecision">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">F1 Score</div>
+    <div class="stat-value" id="statF1">—</div>
+  </div>
+  <div class="stat-card stat-roi">
+    <div class="stat-label">Est. ROI Saved</div>
+    <div class="stat-value" id="statROI">Rp 0</div>
+  </div>
+</div>
+
+<!-- ─── MAIN GRID ─── -->
+<div class="main-grid">
+
+  <!-- LEFT: Transaction Table -->
+  <div class="panel panel-table">
+    <div class="panel-header">
+      <h2>Live Transaction Stream</h2>
+      <span class="badge" id="txnCount">0 txns</span>
+    </div>
+    <div class="table-wrap" id="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>TXN ID</th>
+            <th>Time</th>
+            <th>Issuer</th>
+            <th>City</th>
+            <th>Amount (IDR)</th>
+            <th>Risk Score</th>
+            <th>Insight / Reason</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="txnBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RIGHT: XAI Panel -->
+  <div class="panel panel-xai">
+    <div class="panel-header">
+      <h2>XAI — Threat Explainer</h2>
+    </div>
+    <div id="xaiContent" class="xai-content">
+      <div class="xai-placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+        </svg>
+        <p>Click a <span class="red-text">flagged transaction</span> to inspect the AI explanation graph.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── BOTTOM: Per-Attack-Type Bars ─── -->
+<div class="panel panel-attacks" id="attackPanel" style="display:none;">
+  <div class="panel-header">
+    <h2>Per-Attack-Type Detection</h2>
+  </div>
+  <div class="attack-bars" id="attackBars"></div>
+</div>
+
+<script>
+// ─── State ───
+let ws;
+let allTxns = [];
+let selectedTxn = null;
+
+// ─── WebSocket ───
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/dashboard`);
+  ws.onopen = () => {
+    document.getElementById('statusDot').className = 'status-dot online';
+    document.getElementById('statusText').textContent = 'Connected';
+  };
+  ws.onclose = () => {
+    document.getElementById('statusDot').className = 'status-dot offline';
+    document.getElementById('statusText').textContent = 'Disconnected';
+    setTimeout(connect, 2000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'reset':
+      allTxns = [];
+      document.getElementById('txnBody').innerHTML = '';
+      document.getElementById('txnCount').textContent = '0 txns';
+      break;
+    case 'transaction':
+      addTransaction(msg.data);
+      break;
+    case 'stats_update':
+      updateStats(msg.data);
+      break;
+    case 'snapshot':
+      if (msg.data.transactions) {
+        msg.data.transactions.forEach(t => addTransaction(t));
+      }
+      updateStats(msg.data);
+      break;
+    case 'attack_start':
+      document.getElementById('statusText').textContent = `Attack in progress (${msg.data.total} txns)`;
+      document.getElementById('attackPanel').style.display = 'block';
+      break;
+    case 'attack_end':
+      document.getElementById('statusText').textContent = 'Attack complete';
+      updateStats(msg.data);
+      break;
+  }
+}
+
+// ─── Transaction Table ───
+function addTransaction(txn) {
+  allTxns.push(txn);
+  const tbody = document.getElementById('txnBody');
+  const row = document.createElement('tr');
+  row.className = txn.is_flagged ? 'row-flagged' : 'row-normal';
+  if (txn.is_flagged) row.classList.add('glow-red');
+  row.dataset.idx = allTxns.length - 1;
+  row.onclick = () => showXAI(txn);
+
+  const scorePct = (txn.risk_score * 100).toFixed(1);
+  const scoreClass = txn.risk_score >= 0.7 ? 'score-high' : txn.risk_score >= 0.4 ? 'score-mid' : 'score-low';
+  const statusText = txn.is_flagged ? 'FLAGGED' : 'APPROVED';
+  const statusClass = txn.is_flagged ? 'status-flagged' : 'status-approved';
+
+  const insightHtml = txn.is_flagged ? 
+    `<span style="color:#fca5a5; font-size:0.75rem; display:block; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${txn.attack_detail}">${txn.fraud_type.replace(/_/g, ' ').toUpperCase()}: ${txn.attack_detail}</span>` : 
+    `<span style="color:#94a3b8; font-size:0.75rem;">Legitimate</span>`;
+
+  row.innerHTML = `
+    <td class="cell-id">${txn.txn_id}</td>
+    <td>${txn.timestamp.split(' ')[1]}</td>
+    <td><span class="issuer-badge">${txn.issuer}</span></td>
+    <td>${txn.city}</td>
+    <td class="cell-amount">${Number(txn.amount_idr).toLocaleString()}</td>
+    <td><span class="score-pill ${scoreClass}">${scorePct}%</span></td>
+    <td>${insightHtml}</td>
+    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+  `;
+
+  // Insert at top
+  if (tbody.firstChild) tbody.insertBefore(row, tbody.firstChild);
+  else tbody.appendChild(row);
+
+  // Keep max 200 rows in DOM
+  while (tbody.children.length > 200) tbody.removeChild(tbody.lastChild);
+  document.getElementById('txnCount').textContent = `${allTxns.length} txns`;
+
+  // Auto-scroll if near top
+  const wrap = document.getElementById('tableWrap');
+  if (wrap.scrollTop < 100) wrap.scrollTop = 0;
+}
+
+// ─── Stats ───
+function updateStats(s) {
+  document.getElementById('statTotal').textContent = (s.total || 0).toLocaleString();
+  document.getElementById('statApproved').textContent = (s.approved || 0).toLocaleString();
+  document.getElementById('statFlagged').textContent = (s.flagged || 0).toLocaleString();
+  const missedEl = document.getElementById('statMissed');
+  if (missedEl) missedEl.textContent = (s.missed || 0).toLocaleString();
+  document.getElementById('statRecall').textContent = s.recall != null ? (s.recall * 100).toFixed(1) + '%' : '—';
+  document.getElementById('statPrecision').textContent = s.precision != null ? (s.precision * 100).toFixed(1) + '%' : '—';
+  document.getElementById('statF1').textContent = s.f1 != null ? s.f1.toFixed(4) : '—';
+  document.getElementById('statROI').textContent = 'Rp ' + (s.roi_saved || 0).toLocaleString();
+
+  // Per-type bars
+  if (s.per_type_total && Object.keys(s.per_type_total).length > 0) {
+    document.getElementById('attackPanel').style.display = 'block';
+    const container = document.getElementById('attackBars');
+    container.innerHTML = '';
+    for (const [ft, total] of Object.entries(s.per_type_total)) {
+      const detected = (s.per_type || {})[ft] || 0;
+      const pct = total > 0 ? (detected / total * 100) : 0;
+      const colorClass = pct >= 70 ? 'bar-good' : pct >= 40 ? 'bar-mid' : 'bar-bad';
+      const div = document.createElement('div');
+      div.className = 'attack-bar-row';
+      div.innerHTML = `
+        <span class="attack-label">${ft.replace(/_/g, ' ')}</span>
+        <div class="attack-bar-track">
+          <div class="attack-bar-fill ${colorClass}" style="width:${pct}%"></div>
+        </div>
+        <span class="attack-pct">${detected}/${total} (${pct.toFixed(0)}%)</span>
+      `;
+      container.appendChild(div);
+    }
+  }
+}
+
+// ─── XAI Graph ───
+function showXAI(txn) {
+  selectedTxn = txn;
+  const xai = document.getElementById('xaiContent');
+
+  // Build nodes and links for the sub-graph
+  const nodes = [
+    { id: txn.payer, label: 'Payer ' + txn.payer.slice(0,6), type: 'payer', main: true },
+    { id: txn.merchant, label: txn.merchant, type: 'merchant', main: true },
+    { id: txn.issuer, label: txn.issuer, type: 'issuer' },
+    { id: txn.city, label: txn.city, type: 'location' },
+  ];
+  const links = [
+    { source: txn.payer, target: txn.merchant, label: 'TRANSACTS', fraud: txn.is_flagged },
+    { source: txn.payer, target: txn.issuer, label: 'USES' },
+    { source: txn.merchant, target: txn.city, label: 'LOCATED' },
+  ];
+
+  // Add related payers for collusion/velocity
+  if (txn.fraud_type && (txn.fraud_type === 'collusion_ring' || txn.fraud_type === 'velocity_attack')) {
+    const relatedPayers = allTxns
+      .filter(t => t.fraud_type === txn.fraud_type && t.payer !== txn.payer && t.merchant === txn.merchant)
+      .slice(0, 4);
+    relatedPayers.forEach((rt, i) => {
+      if (!nodes.find(n => n.id === rt.payer)) {
+        nodes.push({ id: rt.payer, label: 'Payer ' + rt.payer.slice(0,6), type: 'payer' });
+        links.push({ source: rt.payer, target: txn.merchant, label: 'TRANSACTS', fraud: true });
+      }
+    });
+  }
+
+  // Build HTML
+  let html = `
+    <div class="xai-detail">
+      <div class="xai-txn-header">
+        <span class="xai-txn-id">${txn.txn_id}</span>
+        <span class="status-badge ${txn.is_flagged ? 'status-flagged' : 'status-approved'}">${txn.is_flagged ? 'FLAGGED' : 'APPROVED'}</span>
+      </div>
+      <div class="xai-meta">
+        <span>${txn.issuer} (${txn.country})</span>
+        <span>${txn.city}</span>
+        <span>${Number(txn.amount_idr).toLocaleString()} IDR</span>
+        <span>Score: ${(txn.risk_score * 100).toFixed(1)}%</span>
+      </div>
+      ${txn.fraud_type ? `<div class="xai-fraud-type">${txn.fraud_type.replace(/_/g,' ').toUpperCase()}</div>` : ''}
+      ${txn.attack_detail ? `<div class="xai-attack-detail">${txn.attack_detail}</div>` : ''}
+      <div class="xai-graph-container" id="xaiGraph"></div>
+  `;
+
+  // Feature importance bars
+  if (txn.xai_reasons && txn.xai_reasons.length > 0) {
+    html += `<div class="xai-reasons-title">Top Feature Contributions</div><div class="xai-reasons">`;
+    txn.xai_reasons.forEach(r => {
+      const w = (r.importance * 100).toFixed(0);
+      html += `
+        <div class="xai-reason-row">
+          <span class="xai-feat-name">${r.display_name}</span>
+          <div class="xai-feat-bar-track"><div class="xai-feat-bar-fill" style="width:${w}%"></div></div>
+          <span class="xai-feat-val">${w}%</span>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  xai.innerHTML = html;
+
+  // D3 force graph
+  renderGraph(nodes, links);
+}
+
+function renderGraph(nodes, links) {
+  const container = document.getElementById('xaiGraph');
+  if (!container) return;
+  const width = container.clientWidth || 400;
+  const height = 280;
+
+  d3.select('#xaiGraph').selectAll('*').remove();
+  const svg = d3.select('#xaiGraph').append('svg').attr('width', width).attr('height', height);
+
+  const colorMap = { payer: '#00f0ff', merchant: '#f472b6', issuer: '#facc15', location: '#34d399' };
+
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(90))
+    .force('charge', d3.forceManyBody().strength(-250))
+    .force('center', d3.forceCenter(width / 2, height / 2));
+
+  const link = svg.append('g').selectAll('line').data(links).enter().append('line')
+    .attr('stroke', d => d.fraud ? '#ef4444' : '#555')
+    .attr('stroke-width', d => d.fraud ? 2.5 : 1.5)
+    .attr('stroke-dasharray', d => d.fraud ? '0' : '4,4');
+
+  const linkLabel = svg.append('g').selectAll('text').data(links).enter().append('text')
+    .text(d => d.label).attr('fill', '#777').attr('font-size', 9).attr('text-anchor', 'middle');
+
+  const node = svg.append('g').selectAll('g').data(nodes).enter().append('g')
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+
+  node.append('circle')
+    .attr('r', d => d.main ? 18 : 12)
+    .attr('fill', d => colorMap[d.type] || '#888')
+    .attr('opacity', 0.85)
+    .attr('stroke', d => d.main ? '#fff' : 'none')
+    .attr('stroke-width', 2);
+
+  node.append('text')
+    .text(d => d.label)
+    .attr('dy', d => d.main ? 30 : 24)
+    .attr('text-anchor', 'middle')
+    .attr('fill', '#ccc')
+    .attr('font-size', 10);
+
+  sim.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    linkLabel.attr('x', d => (d.source.x + d.target.x) / 2).attr('y', d => (d.source.y + d.target.y) / 2);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+}
+
+// ─── Init ───
+connect();
+</script>
+</body>
+</html>
